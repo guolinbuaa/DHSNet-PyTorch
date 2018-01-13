@@ -1,12 +1,15 @@
 import torch
 import torch.nn as nn
 import torchvision
+import functools
 import pdb
 from torch.nn import init
+
+
 class RCL_Module(nn.Module):
     def __init__(self,in_channels):
         super(RCL_Module, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels,64,1,padding=1)
+        self.conv1 = nn.Conv2d(in_channels, 64, 1, padding=1)
         self.sigmoid = nn.Sigmoid()
         self.conv2 = nn.Conv2d(65,64,3,padding=1)
         self.relu = nn.ReLU()
@@ -90,7 +93,7 @@ class Feature(nn.Module):
         vgg16 = torchvision.models.vgg16(pretrained=True)
         L_vgg16 = list(vgg16.features)
 
-        self.L_self = reduce(lambda x, y: list(x) + list(y), self.features)
+        self.L_self = functools.reduce(lambda x, y: list(x) + list(y), self.features)
         # L_self is a unfolded list of self.features,len()=30
         for l1, l2 in zip(L_vgg16[0:], self.L_self[0:]):
             if (isinstance(l1, nn.Conv2d) and
@@ -111,7 +114,6 @@ class Feature(nn.Module):
         for f in self.features:
             x = f(x)
 
-        print(x.size())
         x = x.view(1, -1)
         x = self.fc(x) #generate the SMRglobal
         x = x.view(1,28,-1)
@@ -124,8 +126,3 @@ class Feature(nn.Module):
         x = self.upsample(x)
         x = self.layer4.forward(self.features[0][3], x)
         return x
-
-
-
-
-
