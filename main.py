@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import dut_omron_dataset
-import model
+import models.DHSNet as DHSNet
 
 
 def main(use_gpu, root, root_gt, batch_size, epoch_num):
@@ -17,16 +17,16 @@ def main(use_gpu, root, root_gt, batch_size, epoch_num):
         batch_size=batch_size
         )
 
-    feature = model.Feature(model.RCL_Module)
+    network = DHSNet.DHSNet()
     if use_gpu:
-        feature = feature.cuda()
+        network = network.cuda()
 
-    optimizer_feature = torch.optim.Adam(feature.parameters(), lr=1e-4)
+    optimizer_feature = torch.optim.Adam(network.parameters(), lr=1e-4)
     criterion = nn.BCEWithLogitsLoss()
 
     for epoch_i in range(epoch_num):
         data_iter = iter(dut_omron)
-        for i in range(len(dut_omron)):
+        for batch_i in range(len(dut_omron)):
             inputs, gts = data_iter.next()
             inputs = Variable(inputs)
             gts = Variable(gts)
@@ -34,8 +34,8 @@ def main(use_gpu, root, root_gt, batch_size, epoch_num):
                 inputs = inputs.cuda()
                 gts = gts.cuda()
 
-            outputs = feature(inputs)
-            loss = criterion(outputs, inputs)
+            outputs = network(inputs)
+            loss = criterion(outputs, gts)
             loss.backward()
             optimizer_feature.step()
 
