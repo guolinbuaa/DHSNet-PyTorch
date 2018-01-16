@@ -1,13 +1,40 @@
 import torch
-import torch
 import torch.nn as nn
 import torchvision
+class RCL_Module(nn.Module):
+    def __init__(self,in_channels):
+        super(RCL_Module, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels,64,1)
+        self.sigmoid = nn.Sigmoid()
+        self.conv2 = nn.Conv2d(65,64,3,padding=1)
+        self.relu = nn.ReLU()
+        self.bn = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(64,64,3,padding=1)
+        self.conv4 = nn.Conv2d(64,1,3,padding=1 )
+    def forward(self,x,smr):
+        out1 = self.conv1(x)
+        out1 = self.sigmoid(out1)
+        out2 = self.sigmoid(smr)
+        out = torch.cat((out1,out2),1)
+        out = self.conv2(out)
+        out = self.relu(out)
+        out = self.bn(out) #out_share
+        out_share = out
+        for i in range(3):
+            out = self.conv3(out)
+            out = torch.add(out,out_share)
+            out = self.relu(out)
+            out = self.bn(out)
+        out = self.conv4(out)
+        return out
 
-
-class DHSNet(nn.Module):
-
-    def __init__(self):
-        super(DHSNet, self).__init__()
+class Feature(nn.Module):
+    def __init__(self,block):
+        super(Feature,self).__init__()
+        self.vgg_pre = []
+        self.block = block
+        #vggnet
+        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 64, 3, padding=1),
@@ -16,20 +43,20 @@ class DHSNet(nn.Module):
             nn.Conv2d(64, 64, 3, padding=1),
             nn.BatchNorm2d(64, eps=1e-5, momentum=0.1, affine=True),
             nn.ReLU(inplace=True)
-            )
+        )
 
         self.conv2 = nn.Sequential(
-            nn.MaxPool2d(2, stride=2),
+            nn.MaxPool2d(2, stride=2), #1/2
             nn.Conv2d(64, 128, 3, padding=1),
             nn.BatchNorm2d(128, eps=1e-5, momentum=0.1, affine=True),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, 128, 3, padding=1),
             nn.BatchNorm2d(128, eps=1e-5, momentum=0.1, affine=True),
             nn.ReLU(inplace=True)
-            )
+        )
 
         self.conv3 = nn.Sequential(
-            nn.MaxPool2d(2, stride=2),
+            nn.MaxPool2d(2, stride=2), #1/4
             nn.Conv2d(128, 256, 3, padding=1),
             nn.BatchNorm2d(256, eps=1e-5, momentum=0.1, affine=True),
             nn.ReLU(inplace=True),
@@ -39,10 +66,10 @@ class DHSNet(nn.Module):
             nn.Conv2d(256, 256, 3, padding=1),
             nn.BatchNorm2d(256, eps=1e-5, momentum=0.1, affine=True),
             nn.ReLU(inplace=True)
-            )
+        )
 
         self.conv4 = nn.Sequential(
-            nn.MaxPool2d(2, stride=2),
+            nn.MaxPool2d(2, stride=2), #1/8
             nn.Conv2d(256, 512, 3, padding=1),
             nn.BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True),
             nn.ReLU(inplace=True),
@@ -52,10 +79,10 @@ class DHSNet(nn.Module):
             nn.Conv2d(512, 512, 3, padding=1),
             nn.BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True),
             nn.ReLU(inplace=True)
-            )
+        )
 
         self.conv5 = nn.Sequential(
-            nn.MaxPool2d(2, stride=2, ceil_mode=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True), #1/16
             nn.Conv2d(512, 512, 3, padding=1),
             nn.BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True),
             nn.ReLU(inplace=True),
@@ -65,43 +92,44 @@ class DHSNet(nn.Module):
             nn.Conv2d(512, 512, 3, padding=1),
             nn.BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True),
             nn.ReLU(inplace=True)
-            )
+        )
 
-        # Copy parameters from pretrained vgg16 network
+
+
+        self.fc= nn.Linear(14*14*512,784)
+        self.layer1 = block(512)
+        self.layer2 = block(256)
+        self.layer3 = block(128)
+        self.layer4 = block(64)
+        self.features = nn.ModuleList(self.vgg_pre)
+
+
         self.__copy_param()
 
-        self.fc = nn.Linear(14*14*512, 784)
-        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
-
-        self.rcl1 = RCL(512)
-        self.rcl2 = RCL(256)
-        self.rcl3 = RCL(128)
-        self.rcl4 = RCL(64)
-        return
-
-    def forward(self, x):
+    def forward(self,x):
         c1 = self.conv1(x)
         c2 = self.conv2(c1)
         c3 = self.conv3(c2)
         c4 = self.conv4(c3)
-        c5 = self.conv5(c4)
-        c5 = c5.view(1, -1)
+        x = self.conv5(c4)
 
-        x = self.fc(c5)
-        x = x.view(-1, 1, 28, 28)
-
-        x = self.rcl1(x, c4)
+        x = x.view(1, -1)
+        x = self.fc(x) #generate the SMRglobal
+        x = x.view(1,28,-1)
+        x = x.unsqueeze(0)
+        x1 = x
+        x = self.layer1.forward(c4,x)
+        x2 = x
         x = self.upsample(x)
-
-        x = self.rcl2(x, c3)
+        x = self.layer2.forward(c3, x)
+        x3 = x
         x = self.upsample(x)
-
-        x = self.rcl3(x, c2)
+        x = self.layer3.forward(c2, x)
+        x4 = x
         x = self.upsample(x)
-
-        x = self.rcl4(x, c1)
-
-        return x
+        x = self.layer4.forward(c1, x)
+        x5 = x
+        return x1,x2,x3,x4,x5
 
     def __copy_param(self):
 
@@ -127,39 +155,6 @@ class DHSNet(nn.Module):
         return
 
 
-class RCL(nn.Module):
 
-    def __init__(self, in_channels):
-        super(RCL, self).__init__()
-        self.conv_pre = nn.Sequential(
-            nn.Conv2d(in_channels, 64, 1, padding=0),
-            nn.Sigmoid()
-            )
 
-        self.conv_t0 = nn.Sequential(
-                nn.Conv2d(65, 64, 3, padding=1),
-                nn.ReLU(inplace=True)
-                )
-        self.conv_t1 = nn.Sequential(
-                nn.Conv2d(64, 64, 3, padding=1),
-                nn.ReLU(inplace=True)
-                )
-        self.conv_t2 = nn.Sequential(
-                nn.Conv2d(64, 64, 3, padding=1),
-                nn.ReLU(inplace=True)
-                )
-        self.conv_t3 = nn.Sequential(
-                nn.Conv2d(64, 1, 1, padding=0),
-                nn.Sigmoid()
-                )
-        return
 
-    def forward(self, coarse_mask, feature_map):
-        f = self.conv_pre(feature_map)
-        x = torch.cat((coarse_mask, f), 1)
-        x = self.conv_t0(x)
-        x = self.conv_t1(x)
-        x = self.conv_t2(x)
-        x = self.conv_t3(x)
-
-        return x
