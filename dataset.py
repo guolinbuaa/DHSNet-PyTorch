@@ -5,7 +5,6 @@ import PIL.Image
 import torch
 from torch.utils import data
 
-
 class MyData(data.Dataset):
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
@@ -16,12 +15,12 @@ class MyData(data.Dataset):
 
         img_root = os.path.join(self.root, 'images')
         gt_root = os.path.join(self.root, 'masks')
-        file_names = os.listdir(gt_root)
+        file_imgnames = os.listdir(img_root)
         self.img_names = []
         self.gt_names = []
         self.names = []
-        for i, name in enumerate(file_names):
-            if not name.endswith('.png'):
+        for i, name in enumerate(file_imgnames):
+            if not name.endswith('.jpg'):
                 continue
             self.img_names.append(
                 os.path.join(img_root, name[:-4] + '.jpg')
@@ -72,30 +71,24 @@ class MyTestData(data.Dataset):
                 - images
                     - images (images here)
                 - masks (ground truth)
-                - ptag (initial maps)
     """
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
 
-    def __init__(self, root, transform=True, ptag='priors'):
+    def __init__(self, root, transform=True):
         super(MyTestData, self).__init__()
         self.root = root
         self._transform = transform
 
         img_root = os.path.join(self.root, 'images')
-        map_root = os.path.join(self.root, ptag)
         file_names = os.listdir(img_root)
         self.img_names = []
-        self.map_names = []
         self.names = []
         for i, name in enumerate(file_names):
             if not name.endswith('.jpg'):
                 continue
             self.img_names.append(
                 os.path.join(img_root, name[:-4] + '.jpg')
-            )
-            self.map_names.append(
-                os.path.join(map_root, name[:-4] + '.png')
             )
             self.names.append(name[:-4])
 
@@ -107,26 +100,19 @@ class MyTestData(data.Dataset):
         img_file = self.img_names[index]
         img = PIL.Image.open(img_file)
         img_size = img.size
-        img = img.resize((256, 256))
+        img = img.resize((224, 224))
         img = np.array(img, dtype=np.uint8)
 
-        map_file = self.map_names[index]
-        map = PIL.Image.open(map_file)
-        map = map.resize((256, 256))
-        map = np.array(map, dtype=np.uint8)
         if self._transform:
-            img, map = self.transform(img, map)
-            return img, map, self.names[index], img_size
+            img = self.transform(img)
+            return img, self.names[index], img_size
         else:
-            return img, map, self.names[index], img_size
+            return img, self.names[index], img_size
 
-    def transform(self, img, map):
+    def transform(self, img):
         img = img.astype(np.float64) / 255
         img -= self.mean
         img /= self.std
         img = img.transpose(2, 0, 1)
         img = torch.from_numpy(img).float()
-
-        map = map.astype(np.float64) / 255
-        map = torch.from_numpy(map).float()
-        return img, map
+        return img

@@ -10,7 +10,7 @@ class RCL_Module(nn.Module):
         self.relu = nn.ReLU()
         self.bn = nn.BatchNorm2d(64)
         self.conv3 = nn.Conv2d(64,64,3,padding=1)
-        self.conv4 = nn.Conv2d(64,1,3,padding=1 )
+        self.conv4 = nn.Conv2d(64,1,3,padding=1)
     def forward(self,x,smr):
         out1 = self.conv1(x)
         out1 = self.sigmoid(out1)
@@ -25,7 +25,7 @@ class RCL_Module(nn.Module):
             out = torch.add(out,out_share)
             out = self.relu(out)
             out = self.bn(out)
-        out = self.conv4(out)
+        out = self.sigmoid(self.conv4(out))
         return out
 
 class Feature(nn.Module):
